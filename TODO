@@ -1,0 +1,6 @@
+
+* Try rpm2sysvpkg with the Solaris native pkgtrans, instead of our own. 
+
+* Fix all FIXMEs, and "Not yet implemented" stuff. 
+
+* Support for including pre/postinstall scripts. 
