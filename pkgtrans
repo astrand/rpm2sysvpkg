@@ -173,9 +173,19 @@ def main():
 
         # Create and write cpio archive with package data
         os.chdir(device1)
+        objects = []
+        if os.path.exists("pkginfo"):
+            objects.append("pkginfo")
+        if os.path.exists("pkgmap"):
+            objects.append("pkgmap")
+        if os.path.exists("reloc"):
+            objects.append("reloc")
+        if os.path.exists("install"):
+            objects.append("install")
         # FIXME: Handle strange filenames, for example, those with
-        # embedded newlines. Consider using -0. 
-        stdout, stdin = popen2.popen2("find pkginfo pkgmap reloc -depth | cpio -o -H newc --quiet")
+        # embedded newlines. Consider using -0.
+        objects = " ".join(objects)
+        stdout, stdin = popen2.popen2("find %s -depth | cpio -o -H newc --quiet" % objects)
         stdin.close()
         data = stdout.read()
         f.write(data)
