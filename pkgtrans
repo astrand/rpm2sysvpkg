@@ -175,7 +175,7 @@ def main():
         os.chdir(device1)
         # FIXME: Handle strange filenames, for example, those with
         # embedded newlines. Consider using -0. 
-        stdout, stdin = popen2.popen2("find reloc -depth | cpio -o -H newc --quiet")
+        stdout, stdin = popen2.popen2("find pkginfo pkgmap reloc -depth | cpio -o -H newc --quiet")
         stdin.close()
         data = stdout.read()
         f.write(data)
