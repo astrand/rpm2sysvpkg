@@ -119,6 +119,7 @@ class SysVFileInfo:
         self.klass = "none"
 
         # pathname
+        # FIXME: Should check for other special characters as well. 
         if (" " in rfi.path) or ("=" in rfi.path):
             sys.exit("Solaris packages cannot contain filenames with space or =")
         self.pathname = rfi.path
