@@ -381,7 +381,7 @@ def get_sysv_max_part_size(rpmname, num_files):
 
 
 
-def create_procedure_scripts(rpmfile, unpacked_dir):
+def create_procedure_scripts(rpmfile, unpacked_dir, preuninstall_prepend=[]):
     preinstall = []
     postinstall = []
     preuninstall = []
@@ -432,6 +432,7 @@ def create_procedure_scripts(rpmfile, unpacked_dir):
 
     preinstall = "\n".join(preinstall)
     postinstall = "\n".join(postinstall)
+    preuninstall = preuninstall_prepend + preuninstall
     preuninstall = "\n".join(preuninstall)
     postuninstall = "\n".join(postuninstall)
 
@@ -566,11 +567,21 @@ def main():
     pkginfo.write("CLASSES=none\n")
     pkginfo.close()
 
+    rfis = get_files_info(rpmfile)
+
+    #
+    # Generate lines for preuninstall script to save config files
+    #
+    preuninstall_prepend = []
+    for rfi in rfis:
+        if rfi.isconfig:
+            preuninstall_prepend.append("mv %s %s.pkgsave" % (rfi.path, rfi.path))
+    
     #
     # Create procedure scripts, if any
     #
     if scripts:
-        scripts_sfi = create_procedure_scripts(rpmfile, unpacked_dir)
+        scripts_sfi = create_procedure_scripts(rpmfile, unpacked_dir, preuninstall_prepend)
     else:
         scripts_sfi = []
 
@@ -578,7 +589,6 @@ def main():
     # Create the pkgmap file
     #
     pkgmap = open(os.path.join(unpacked_dir, "pkgmap"), "w")
-    rfis = get_files_info(rpmfile)
     pkgmap.write(": 1 %d\n" % get_sysv_max_part_size(rpmfile, len(rfis)))
     for rfi in rfis:
         rfi.set_mtime()
