@@ -352,29 +352,43 @@ def main():
     rpmname = get_rpm_name(rpmfile)
     sysv_abbrev = get_sysv_pkg_abbrev(rpmname, abbrev_prefix)
     sysv_version = get_sysv_version(rpmfile)
-    
+    default_outfile = sysv_abbrev + "-" + sysv_version + "-" + get_rpm_arch(rpmfile)
+
+    #
+    # Determine output object
+    #
     if len(args) == 2:
+        # The output argument was specified. 
         output = args[1]
+        if os.path.isdir(output):
+            # Existing directory. Append default output name. 
+            output = os.path.join(output, default_outfile)
     else:
-        # Default output file is PKG-VERSION-ARCH
-        output = sysv_abbrev + "-" + sysv_version + "-" + get_rpm_arch(rpmfile)
+        # Default output file is PKG-VERSION-ARCH, in current directory. 
+        output = default_outfile
     output = os.path.abspath(output)
 
+    #
+    # Determine and create package build directory
+    #
     if fsformat:
-        unpacked_dir = os.path.abspath(output)
+        unpacked_dir = output
     else:
         tempdir = tempfile.mktemp("rpm2sysvpkg")
         os.mkdir(tempdir)
         unpacked_dir = os.path.join(tempdir, sysv_abbrev)
 
-    # Create unpacked output directory, and directories within it. 
     try:
-        os.mkdir(unpacked_dir)
+        if not os.path.exists(unpacked_dir):
+            os.mkdir(unpacked_dir)    
         os.mkdir(os.path.join(unpacked_dir, "reloc"))
     except OSError, e:
-        print >>sys.stderr, "Cannot create output directory:", e
+        print >>sys.stderr, "Cannot create build directory:", e
+        
 
+    #
     # Unpack the RPM files into the reloc directory
+    #
     os.chdir(os.path.join(unpacked_dir, "reloc"))
     os.system("rpm2cpio '%s' | cpio --quiet -id" % rpmfile)
 
@@ -425,6 +439,8 @@ def main():
             print >>sys.stderr, "Make sure pkgtrans is in PATH, or the same dir as rpm2sysvpkg."
         
         shutil.rmtree(tempdir)
+
+    print >>sys.stderr, "Wrote", output
 
 
 if __name__ == "__main__":
