@@ -399,7 +399,7 @@ def main():
             print >>sys.stderr, "Execution of pkgtrans failed with returncode", ret
             print >>sys.stderr, "Make sure pkgtrans is in PATH, or the same dir as rpm2sysvpkg."
         
-    shutil.rmtree(tempdir)
+        shutil.rmtree(tempdir)
 
 
 if __name__ == "__main__":
