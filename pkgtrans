@@ -1,0 +1,180 @@
+#!/usr/bin/env python
+# -*-mode: python; coding: iso-8859-1 -*-
+#
+# Copyright (c) 2004 Cendio AB. All rights reserved.
+# Author: Peter Åstrand <peter@cendio.se>
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 2 of the License. 
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+
+import sys
+import getopt
+import os
+import popen2
+
+FS_FORMAT=1
+DATASTREAM_FORMAT=2
+
+def usage():
+    # Let's try to keep our syntax compatible with Solaris
+    print >>sys.stderr, """
+pkgtrans [-hinos] device1 device2 [pkginst...]
+
+-h,--help  Show this help
+
+-i         Copy only the pkginfo(4) and pkgmap(4) files.
+           
+-n         Create a new instance of the package on the destina-
+           tion device if any instance of this package already
+           exists, up to the number specified by the MAXINST
+           variable in the pkginfo(4) file.
+           
+-o         Overwrite the same instance on the destination device;
+           package instance will be overwritten if it already
+           exists.
+           
+-s         Indicates that the package should be written to dev-
+           ice2 as a datastream rather than as a file system. The
+           default behavior is to write a file system format on
+           devices that support both formats.
+   """
+    sys.exit(2)
+
+
+def get_pkg(device1):
+    """Fetch PKG from pkginfo"""
+    pkginfo = open(os.path.join(device1, "pkginfo"))
+    while 1:
+        line = pkginfo.readline()
+        if not line:
+            break
+        line = line.strip()
+        if line.startswith("#"):
+            continue
+        fields = line.split("=", 1)
+        if len(fields) == 2:
+            name, val = fields
+            if name == "PKG":
+                if val.startswith('"'):
+                    val = val[1:-1]
+                return val
+
+    sys.exit("PKG was not found in pkginfo file")
+
+
+def get_max_part_size(device1):
+    """Fetch max_part_size from pkgmap"""
+    pkgmap = open(os.path.join(device1, "pkgmap"))
+    while 1:
+        line = pkgmap.readline()
+        if not line:
+            break
+        line = line.strip()
+        if line.startswith(":"):
+            # Without the colon
+            line = line[1:]
+            fields = line.split()
+            if len(fields) != 2:
+                sys.exit("Bad format of colon line in pkgmap file")
+            num_parts, max_part_size = map(int, fields)
+            if num_parts != 1:
+                sys.exit("Cannot handle multipart packages.")
+            return max_part_size
+
+    sys.exit("No colon line found in pkgmap file")
+
+
+def main():
+    try:
+        opts, args = getopt.gnu_getopt(sys.argv[1:], "hinos", ["help"])
+    except getopt.GetoptError:
+        usage()
+
+    for o, a in opts:
+        if o in ("-h", "--help"):
+            usage()
+        if o == "-i":
+            sys.exit("Not yet implemented")
+        if o == "-n":
+            sys.exit("Not yet implemented")
+        if o == "-o":
+            sys.exit("Not yet implemented")
+        if o == "-s":
+            sys.exit("Not yet implemented")
+
+    if len(args) not in [2, 3]:
+        usage()
+
+    device1 = args[0]
+    device2 = args[1]
+    if len(args) == 3:
+        pkginst = args[2]
+    else:
+        pkginst = None # Ask
+
+    if not os.path.exists(device1):
+        sys.exit("The source (device1) does not exist.")
+    elif os.path.isdir(device1):
+        srcformat = FS_FORMAT
+    else:
+        sys.exit("Translation of source in datastream format is not yet implemented")
+        #srcformat = DATASTREAM_FORMAT
+
+    # The Solaris pkgtrans has somewhat strange semantics, IMHO, wrt
+    # selection of the destination format:
+    #
+    # * If device2 is an existing directory, the fs format will be
+    #   used. Specifying -s gives an error. 
+    #
+    # * Otherwise, the datastream format will be used. Specifying -s
+    #   is a noop.
+    #
+    # It seems like -s is only effective when device2 is a device file.
+    if os.path.isdir(device2):
+        sys.exit("Translation to file system format is not yet implemented")
+        #dstformat = FS_FORMAT
+    else:
+        dstformat = DATASTREAM_FORMAT
+
+    if srcformat == FS_FORMAT and dstformat == DATASTREAM_FORMAT:
+        f = open(device2, "w")
+
+        pkg = get_pkg(device1)
+        max_part_size = get_max_part_size(device1)
+
+        # Write header
+        header = "# PaCkAgE DaTaStReAm\n"
+        header += "%s 1 %d\n" % (pkg, max_part_size)
+        header += "# end of header\n"
+        padding = 512 - len(header) % 512
+        header += "\x00" * padding
+        f.write(header)
+    
+        # Create and write cpio archive with special information files
+        source_parent = os.path.join(device1, "..")
+        os.chdir(source_parent)
+        stdout, stdin = popen2.popen2(["cpio", "-o", "-H", "newc", "--quiet"])
+        # As long as the string is less than PIPE_BUF, this should be
+        # safe. Again, process.py would be handy. 
+        stdin.write("%s/pkginfo\n%s/pkgmap\n" % (pkg, pkg))
+        stdin.close()
+        data = stdout.read()
+        f.write(data)
+
+        # Create and write cpio archive with package data
+        #os.chdir(device1)
+        
+
+if __name__ == "__main__":
+    main()
+    

@@ -1,0 +1,379 @@
+#!/usr/bin/env python
+# -*-mode: python; coding: iso-8859-1 -*-
+#
+# Copyright (c) 2004 Cendio AB. All rights reserved.
+# Author: Peter Åstrand <peter@cendio.se>
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 2 of the License. 
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+
+# TODO:
+# Support for calling sysvpkgtrans (using temporary directory for unpacked pkg)
+
+import sys
+import getopt
+import tempfile
+import os
+import popen2
+import string
+import stat
+
+# SysV says 9, but APDG says 32
+PKGNAME_MAX = 32
+
+
+class RpmFileInfo:
+    def __init__(self, path, size, mtime, md5sum, mode, owner, group,
+                 isconfig, isdoc, rdev, symlink):
+        self.path = path
+        self.size = int(size)
+        self.mtime = int(mtime)
+        self.md5sum = md5sum
+        self.mode = int(mode, 8)
+        self.owner = owner
+        self.group = group
+        self.isconfig = int(isconfig)
+        self.isdoc = int(isdoc)
+        self.rdev = int(rdev)
+        self.symlink = symlink
+
+    def set_mtime(self):
+        """Change mtime on the file in the FS, to match the RPM data"""
+        path = self.path
+        if path.startswith("/"):
+            path = path[1:]
+        os.utime(path, (self.mtime, self.mtime))
+
+
+class SysVFileInfo:
+    def __init__(self, rfi):
+        """Create a SysVFileInfo instance from a RpmFileInfo instance"""
+        # part
+        self.part = 1
+        # ftype
+        if rfi.isconfig:
+            self.ftype = "v" # Volatile
+        elif stat.S_ISDIR(rfi.mode):
+            self.ftype = "d"
+        elif stat.S_ISCHR(rfi.mode):
+            self.ftype = "c"
+        elif stat.S_ISBLK(rfi.mode):
+            self.ftype = "b"
+        elif stat.S_ISREG(rfi.mode):
+            self.ftype = "f"
+        elif stat.S_ISFIFO(rfi.mode):
+            self.ftype = "p"
+        elif stat.S_ISLNK(rfi.mode):
+            self.ftype = "s"
+        elif stat.S_ISSOCK(rfi.mode):
+            sys.exit("SysV pkgs cannot contain sockets")
+        # class
+        self.klass = "none"
+        # pathname
+        self.pathname = rfi.path
+        if rfi.symlink and rfi.symlink != "X":
+            self.pathname += "=" + rfi.symlink
+        if self.pathname.startswith("/"):
+            self.pathname = self.pathname[1:]
+        # major, minor
+        if self.ftype in ["b", "c"]:
+            self.major = (rfi.rdev & 0xff00) >> 8
+            self.minor = rfi.rdev & 0xff
+        else:
+            self.major = None
+            self.minor = None
+        # mode
+        self.mode = stat.S_IMODE(rfi.mode)
+        # owner, group
+        if not self.ftype in ["l", "s", "i"]:
+            self.owner = rfi.owner
+            self.group = rfi.group
+        else:
+            self.owner = None
+            self.group = None
+        # size, cksum
+        if not self.ftype in ["d", "x", "p", "b", "c", "s", "l"]:
+            self.size = rfi.size
+            self.cksum = sysv_sum(self.pathname)
+        else:
+            self.size = None
+            self.cksum = None
+        # modtime
+        self.modtime = rfi.mtime
+
+
+    def gen_pkgmap_line(self):
+        s = "%d" % self.part
+        s += " %s" % self.ftype
+        s += " %s" % self.klass
+        s += " %s" % self.pathname
+        if not None in (self.major, self.minor):
+            s += " %d %d" % (self.major, self.minor)
+        s += " %o" % self.mode
+        if self.owner and self.group:
+            s += " %s %s" % (self.owner, self.group)
+        if not None in (self.size, self.cksum):
+            s += " %d %d" % (self.size, self.cksum)
+        s += " %d" % self.modtime
+        s += "\n"
+        return s
+        
+
+def get_files_info(rpmfile):
+    stdout, stdin = popen2.popen2(["rpm", "-qp", rpmfile, "--dump"])
+    stdin.close()
+    files = []
+    while 1:
+        line = stdout.readline().strip()
+        if not line:
+            break
+        
+        fields = line.split(" ")
+        if not len(fields) == 11:
+            print >>sys.stderr, "Invalid outpout from rpm --dump:"
+            print >>sys.stderr, repr(line)
+            sys.exit(1)
+
+        files.append(RpmFileInfo(*fields))
+
+    return files
+
+
+def sysv_sum(filename):
+    """sum -s"""
+    f = open(filename)
+    s = 0
+    twopower32 = 2**32
+    while 1:
+        data = f.read(8192)
+        if data == "":
+            break
+        for c in data:
+            s += ord(c)
+            # Note: As far as I understand, the SysV sum uses a 32 bit
+            # algorithm.
+            s = s % twopower32
+    r = (s & 0xffff) + ((s & 0xffffffffL) >> 16);
+    checksum = (r & 0xffff) + (r >> 16)
+    return checksum
+
+
+def usage():
+    print >>sys.stderr, """
+rpm2sysvpkg [-fh] <rpm-package> [output-object]
+
+-h,--help  Show this help
+
+-f         Use filesystem (directory) format for output instead of datastream
+           format (do not call sysvpkgtrans)
+   """
+    sys.exit(2)
+
+
+def run_rpm_query(rpmfile, qstring):
+    # Fetch from rpm. Oh I wish my process module was available...
+    lang = os.getenv("LANG", "")
+    os.putenv("LANG", "C")
+    stdout, stdin = popen2.popen2(["rpm", "-qp", rpmfile, "--qf", qstring])
+    os.putenv("LANG", lang)
+    stdin.close()
+    name = stdout.read().strip()
+    if name == "":
+        sys.exit("rpm query failed")
+    return name
+
+
+def get_rpm_name(rpmfile):
+    return run_rpm_query(rpmfile, "%{NAME}")
+
+
+def get_rpm_version(rpmfile):
+    return run_rpm_query(rpmfile, "%{VERSION}-%{RELEASE}")
+
+
+def get_rpm_summary(rpmfile):
+    return run_rpm_query(rpmfile, "%{SUMMARY}")
+
+
+def get_rpm_vendor(rpmfile):
+    return run_rpm_query(rpmfile, "%{VENDOR}")
+
+
+def get_rpm_url(rpmfile):
+    return run_rpm_query(rpmfile, "%{URL}")
+
+
+def get_rpm_packager(rpmfile):
+    return run_rpm_query(rpmfile, "%{PACKAGER}")
+
+
+def get_rpm_arch(rpmfile):
+    return run_rpm_query(rpmfile, "%{ARCH}")
+
+
+def get_sysv_pkg(rpmname):
+    """Get the SysV pkg NAME, from a rpm name"""
+    # FIXME: Assert that names conforms to the rules on p27.
+    # (must not be all, new etc)
+    if len(rpmname) > PKGNAME_MAX:
+        print >>sys.stderr, "warning: name %s truncated to %s" % (rpmname, rpmname[:PKGNAME_MAX])
+    return rpmname[:PKGNAME_MAX]
+
+
+def get_sysv_version(rpmname):
+    # FIXME: Check for validity. 
+    return get_rpm_version(rpmname)
+
+
+def get_sysv_description(rpmname):
+    # FIXME: Check for validity.
+    return get_rpm_summary(rpmname)
+
+def get_sysv_arch(rpmname):
+    arch = get_rpm_arch(rpmname)
+    if arch == "noarch":
+        arch = "sparc,i386,ppc"
+    return arch
+
+
+get_sysv_name = get_sysv_description
+
+
+def get_sysv_vendor(rpmname):
+    # FIXME: Check for validity.
+    vendor = get_rpm_vendor(rpmname)
+    if vendor == "(none)":
+        vendor = ""
+    return vendor
+
+
+def get_sysv_hotline(rpmname):
+    # FIXME: Check for validity.
+    return get_rpm_url(rpmname)
+
+
+def get_sysv_email(rpmname):
+    # FIXME: Check for validity.
+    email = get_rpm_packager(rpmname)
+    if email == "(none)":
+        email = ""
+    return email
+
+
+def get_sysv_max_part_size(rpmname, num_files):
+    """Get the max_part_size figure, by checking how many blocks the
+    result from rpm2cpio is"""
+    stdout, stdin = popen2.popen2(["rpm2cpio", rpmname])
+    stdin.close()
+    size = 0
+    while 1:
+        data = stdout.read(8192)
+        if data == "":
+            break
+        size += len(data)
+
+    if size == 0:
+        sys.exit("rpm2cpio failed")
+    
+    data_blocks = size // 512 + 1
+    # Now we have the size of the pkg part cpio archive *without* the
+    # pkginfo and pkgmap files. The pkginfo file is probably not
+    # larger then 2 * num_files blocks (each line max 1024
+    # chars). FIXME: Make me better.
+    pkgmap_blocks = 2 * num_files
+    # pkginfo is probably not larger than 8k. FIXME: Better. 
+    pkginfo_blocks = 16
+    return data_blocks + pkgmap_blocks + pkginfo_blocks
+
+
+def main():
+    try:
+        opts, args = getopt.gnu_getopt(sys.argv[1:], "fh", ["fsformat", "help"])
+    except getopt.GetoptError:
+        usage()
+
+    fsformat = 0
+
+    for o, a in opts:
+        if o == "-f":
+            fsformat = 1
+        if o in ("-h", "--help"):
+            usage()
+
+    if len(args) not in [1, 2]:
+        usage()
+
+    rpmfile = os.path.abspath(args[0])
+    rpmname = get_rpm_name(rpmfile)
+    
+    if len(args) == 2:
+        output = args[1]
+    else:
+        # Use the rpm name as output
+        output = rpmname
+
+    if fsformat:
+        unpacked_dir = os.path.abspath(output)
+    else:
+        # unpacked_dir should be in a temporary directory. FIXME
+        raise NotImplementedError()
+
+    # Create unpacked output directory, and directories within it. 
+    try:
+        os.mkdir(unpacked_dir)
+        os.mkdir(os.path.join(unpacked_dir, "reloc"))
+    except OSError, e:
+        print >>sys.stderr, "Cannot create output directory:", e
+
+    # Unpack the RPM files into the reloc directory
+    os.chdir(os.path.join(unpacked_dir, "reloc"))
+    os.system("rpm2cpio '%s' | cpio --quiet -id" % rpmfile)
+
+    #
+    # Create the pkginfo file
+    #
+    pkginfo = open(os.path.join(unpacked_dir, "pkginfo"), "w")
+    # PKG 
+    sysvname = get_sysv_pkg(rpmname)
+    pkginfo.write("PKG=%s\n" % sysvname)
+    # NAME
+    pkginfo.write("NAME=%s\n" % get_sysv_name(rpmfile))
+    pkginfo.write("ARCH=%s\n" % get_sysv_arch(rpmfile))
+    pkginfo.write("VERSION=%s\n" % get_sysv_version(rpmfile))
+    pkginfo.write("DESC=%s\n" % get_sysv_description(rpmfile))
+    pkginfo.write("VENDOR=%s\n" % get_sysv_vendor(rpmfile))
+    pkginfo.write("HOTLINE=%s\n" % get_sysv_hotline(rpmfile))
+    pkginfo.write("EMAIL=%s\n" % get_sysv_email(rpmfile))
+    pkginfo.write("CATEGORY=application\n") # Sometimes in the future, we might try a translation
+    # FIXME: Is this correct?
+    pkginfo.write("BASEDIR=/\n")
+    pkginfo.write("CLASSES=none\n")
+    pkginfo.close()
+
+    #
+    # Create the pkgmap file
+    #
+    pkgmap = open(os.path.join(unpacked_dir, "pkgmap"), "w")
+    rfis = get_files_info(rpmfile)
+    pkgmap.write(": 1 %d\n" % get_sysv_max_part_size(rpmfile, len(rfis)))
+    for rfi in rfis:
+        rfi.set_mtime()
+        sfi = SysVFileInfo(rfi)
+        pkgmap.write(sfi.gen_pkgmap_line())
+
+    pkgmap.close()
+
+
+if __name__ == "__main__":
+    main()
+    
