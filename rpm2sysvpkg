@@ -235,6 +235,8 @@ rpm2sysvpkg [-fh] <rpm-package> [output-object]
 
 -f                    Use filesystem (directory) format for output instead of
                       datastream format (do not call pkgtrans)
+
+-n,--noscripts        Don't transfer installation scripts.
              
 -p,--prefix <prefix>  Prefix package abbreviation with <prefix>
    """
@@ -477,19 +479,23 @@ def create_procedure_scripts(rpmfile, unpacked_dir):
 
 def main():
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "fhp:",
-                                   ["fsformat", "help", "prefix="])
+        opts, args = getopt.getopt(sys.argv[1:], "fhnp:",
+                                   ["fsformat", "help",
+                                    "noscripts", "prefix="])
     except getopt.GetoptError:
         usage()
 
     fsformat = 0
     abbrev_prefix = ""
+    scripts = 1
 
     for o, a in opts:
         if o == "-f":
             fsformat = 1
         if o in ("-h", "--help"):
             usage()
+        if o in ("-n", "--noscripts"):
+            scripts = 0
         if o in ("-p", "--prefix"):
             abbrev_prefix = a
 
@@ -563,7 +569,10 @@ def main():
     #
     # Create procedure scripts, if any
     #
-    scripts_sfi = create_procedure_scripts(rpmfile, unpacked_dir)
+    if scripts:
+        scripts_sfi = create_procedure_scripts(rpmfile, unpacked_dir)
+    else:
+        scripts_sfi = []
 
     #
     # Create the pkgmap file
