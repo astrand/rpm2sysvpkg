@@ -17,9 +17,6 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
-# TODO:
-# Support for calling sysvpkgtrans (using temporary directory for unpacked pkg)
-
 import sys
 import getopt
 import tempfile
@@ -186,7 +183,7 @@ rpm2sysvpkg [-fh] <rpm-package> [output-object]
 -h,--help             Show this help
 
 -f                    Use filesystem (directory) format for output instead of
-                      datastream format (do not call sysvpkgtrans)
+                      datastream format (do not call pkgtrans)
              
 -p,--prefix <prefix>  Prefix package abbreviation with <prefix>
    """
