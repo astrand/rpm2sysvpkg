@@ -96,6 +96,7 @@ class SysVFileInfo:
     def _init_from_rfi(self, rfi):
         # part
         self.part = 1
+
         # ftype
         if rfi.isconfig:
             self.ftype = "v" # Volatile
@@ -113,14 +114,19 @@ class SysVFileInfo:
             self.ftype = "s"
         elif stat.S_ISSOCK(rfi.mode):
             sys.exit("SysV pkgs cannot contain sockets")
+
         # class
         self.klass = "none"
+
         # pathname
+        if (" " in rfi.path) or ("=" in rfi.path):
+            sys.exit("Solaris packages cannot contain filenames with space or =")
         self.pathname = rfi.path
         if rfi.symlink and rfi.symlink != "X":
             self.pathname += "=" + rfi.symlink
         if self.pathname.startswith("/"):
             self.pathname = self.pathname[1:]
+
         # major, minor
         if self.ftype in ["b", "c"]:
             self.major = (rfi.rdev & 0xff00) >> 8
@@ -128,8 +134,10 @@ class SysVFileInfo:
         else:
             self.major = None
             self.minor = None
+
         # mode
         self.mode = stat.S_IMODE(rfi.mode)
+
         # owner, group
         if not self.ftype in ["l", "s", "i"]:
             self.owner = rfi.owner
@@ -137,6 +145,7 @@ class SysVFileInfo:
         else:
             self.owner = None
             self.group = None
+
         # size, cksum
         if not self.ftype in ["d", "x", "p", "b", "c", "s", "l"]:
             self.size = rfi.size
@@ -144,6 +153,7 @@ class SysVFileInfo:
         else:
             self.size = None
             self.cksum = None
+
         # modtime
         self.modtime = rfi.mtime
 
