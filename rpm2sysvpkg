@@ -414,21 +414,25 @@ def create_procedure_scripts(rpmfile, unpacked_dir):
     install_dir = os.path.join(unpacked_dir, "install")
     os.mkdir(install_dir)
 
-    preinstall_file = open(os.path.join(install_dir, "preinstall"), "w")
-    preinstall_file.write(preinstall)
-    preinstall_file.close()
+    if preinstall:
+        preinstall_file = open(os.path.join(install_dir, "preinstall"), "w")
+        preinstall_file.write(preinstall)
+        preinstall_file.close()
 
-    postinstall_file = open(os.path.join(install_dir, "postinstall"), "w")
-    postinstall_file.write(postinstall)
-    postinstall_file.close()
+    if postinstall:
+        postinstall_file = open(os.path.join(install_dir, "postinstall"), "w")
+        postinstall_file.write(postinstall)
+        postinstall_file.close()
 
-    preuninstall_file = open(os.path.join(install_dir, "preremove"), "w")
-    preuninstall_file.write(preuninstall)
-    preuninstall_file.close()
+    if preuninstall:
+        preuninstall_file = open(os.path.join(install_dir, "preremove"), "w")
+        preuninstall_file.write(preuninstall)
+        preuninstall_file.close()
 
-    postuninstall_file = open(os.path.join(install_dir, "postremove"), "w")
-    postuninstall_file.write(postuninstall)
-    postuninstall_file.close()
+    if postuninstall:
+        postuninstall_file = open(os.path.join(install_dir, "postremove"), "w")
+        postuninstall_file.write(postuninstall)
+        postuninstall_file.close()
 
 
 def main():
