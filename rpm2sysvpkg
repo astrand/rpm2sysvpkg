@@ -354,12 +354,13 @@ def main():
     rpmfile = os.path.abspath(args[0])
     rpmname = get_rpm_name(rpmfile)
     sysv_abbrev = get_sysv_pkg_abbrev(rpmname, abbrev_prefix)
+    sysv_version = get_sysv_version(rpmfile)
     
     if len(args) == 2:
         output = args[1]
     else:
-        # Use SysV pkg abbrev as output
-        output = sysv_abbrev
+        # Default output file is PKG-VERSION-ARCH
+        output = sysv_abbrev + "-" + sysv_version + "-" + get_rpm_arch(rpmfile)
     output = os.path.abspath(output)
 
     if fsformat:
@@ -389,7 +390,7 @@ def main():
     # NAME
     pkginfo.write("NAME=%s\n" % get_sysv_name(rpmfile))
     pkginfo.write("ARCH=%s\n" % get_sysv_arch(rpmfile))
-    pkginfo.write("VERSION=%s\n" % get_sysv_version(rpmfile))
+    pkginfo.write("VERSION=%s\n" % sysv_version)
     pkginfo.write("DESC=%s\n" % get_sysv_description(rpmfile))
     pkginfo.write("VENDOR=%s\n" % get_sysv_vendor(rpmfile))
     pkginfo.write("HOTLINE=%s\n" % get_sysv_hotline(rpmfile))
