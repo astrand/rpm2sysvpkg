@@ -183,10 +183,12 @@ def usage():
     print >>sys.stderr, """
 rpm2sysvpkg [-fh] <rpm-package> [output-object]
 
--h,--help  Show this help
+-h,--help             Show this help
 
--f         Use filesystem (directory) format for output instead of datastream
-           format (do not call sysvpkgtrans)
+-f                    Use filesystem (directory) format for output instead of
+                      datastream format (do not call sysvpkgtrans)
+             
+-p,--prefix <prefix>  Prefix package abbreviation with <prefix>
    """
     sys.exit(2)
 
@@ -232,13 +234,34 @@ def get_rpm_arch(rpmfile):
     return run_rpm_query(rpmfile, "%{ARCH}")
 
 
-def get_sysv_pkg_abbrev(rpmname):
+def get_sysv_pkg_abbrev(rpmname, prefix=""):
     """Get the SysV pkg NAME, from a rpm name"""
-    # FIXME: Assert that names conforms to the rules on p27.
-    # (must not be all, new etc)
-    if len(rpmname) > PKGABBREV_MAX:
-        print >>sys.stderr, "warning: name %s truncated to %s" % (rpmname, rpmname[:PKGABBREV_MAX])
-    return rpmname[:PKGABBREV_MAX]
+    pkg_abbrev = prefix + rpmname
+    
+    # Check for invalid chars. SysV allows + and -, but Solaris
+    # pkginfo(4) does not say these are allowed. Following Solaris;
+    # does not allow them. 
+    allowed_chars = string.ascii_letters + string.digits
+    delete_chars = ""
+    for x in range(256):
+        c = chr(x)
+        if not c in allowed_chars:
+            delete_chars += c
+    new_abbrev = pkg_abbrev.translate(string.maketrans("", ""), delete_chars)
+    if new_abbrev != pkg_abbrev:
+        pkg_abbrev = new_abbrev
+        print >>sys.stderr, "Warning: translated abbreviation to %s due to illegal characters" % pkg_abbrev
+
+    # Check length
+    if len(pkg_abbrev) > PKGABBREV_MAX:
+        pkg_abbrev = pkg_abbrev[:PKGABBREV_MAX]
+        print >>sys.stderr, "Warning: package abbreviation truncated to %s" % pkg_abbrev
+
+    # Check resulting name
+    if pkg_abbrev in ["install", "new", "all"]:
+        sys.exit('Package abbreviation cannot be "install", "new", or "all"')
+    
+    return pkg_abbrev
 
 
 def get_sysv_version(rpmname):
@@ -309,30 +332,34 @@ def get_sysv_max_part_size(rpmname, num_files):
 
 def main():
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "fh", ["fsformat", "help"])
+        opts, args = getopt.getopt(sys.argv[1:], "fhp:",
+                                   ["fsformat", "help", "prefix="])
     except getopt.GetoptError:
         usage()
 
     fsformat = 0
+    abbrev_prefix = ""
 
     for o, a in opts:
         if o == "-f":
             fsformat = 1
         if o in ("-h", "--help"):
             usage()
+        if o in ("-p", "--prefix"):
+            abbrev_prefix = a
 
     if len(args) not in [1, 2]:
         usage()
 
     rpmfile = os.path.abspath(args[0])
     rpmname = get_rpm_name(rpmfile)
-    sysvname = get_sysv_pkg_abbrev(rpmname)
+    sysv_abbrev = get_sysv_pkg_abbrev(rpmname, abbrev_prefix)
     
     if len(args) == 2:
         output = args[1]
     else:
-        # Use the rpm name as output
-        output = rpmname
+        # Use SysV pkg abbrev as output
+        output = sysv_abbrev
     output = os.path.abspath(output)
 
     if fsformat:
@@ -340,7 +367,7 @@ def main():
     else:
         tempdir = tempfile.mktemp("rpm2sysvpkg")
         os.mkdir(tempdir)
-        unpacked_dir = os.path.join(tempdir, sysvname)
+        unpacked_dir = os.path.join(tempdir, sysv_abbrev)
 
     # Create unpacked output directory, and directories within it. 
     try:
@@ -358,7 +385,7 @@ def main():
     #
     pkginfo = open(os.path.join(unpacked_dir, "pkginfo"), "w")
     # PKG 
-    pkginfo.write("PKG=%s\n" % sysvname)
+    pkginfo.write("PKG=%s\n" % sysv_abbrev)
     # NAME
     pkginfo.write("NAME=%s\n" % get_sysv_name(rpmfile))
     pkginfo.write("ARCH=%s\n" % get_sysv_arch(rpmfile))
