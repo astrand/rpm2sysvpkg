@@ -30,7 +30,7 @@ import stat
 import shutil
 
 # SysV says 9, but APDG says 32
-PKGNAME_MAX = 32
+PKGABBREV_MAX = 32
 
 
 def get_origin_dir():
@@ -232,13 +232,13 @@ def get_rpm_arch(rpmfile):
     return run_rpm_query(rpmfile, "%{ARCH}")
 
 
-def get_sysv_pkg(rpmname):
+def get_sysv_pkg_abbrev(rpmname):
     """Get the SysV pkg NAME, from a rpm name"""
     # FIXME: Assert that names conforms to the rules on p27.
     # (must not be all, new etc)
-    if len(rpmname) > PKGNAME_MAX:
-        print >>sys.stderr, "warning: name %s truncated to %s" % (rpmname, rpmname[:PKGNAME_MAX])
-    return rpmname[:PKGNAME_MAX]
+    if len(rpmname) > PKGABBREV_MAX:
+        print >>sys.stderr, "warning: name %s truncated to %s" % (rpmname, rpmname[:PKGABBREV_MAX])
+    return rpmname[:PKGABBREV_MAX]
 
 
 def get_sysv_version(rpmname):
@@ -326,7 +326,7 @@ def main():
 
     rpmfile = os.path.abspath(args[0])
     rpmname = get_rpm_name(rpmfile)
-    sysvname = get_sysv_pkg(rpmname)
+    sysvname = get_sysv_pkg_abbrev(rpmname)
     
     if len(args) == 2:
         output = args[1]
