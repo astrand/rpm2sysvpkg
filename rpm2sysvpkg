@@ -27,9 +27,20 @@ import os
 import popen2
 import string
 import stat
+import shutil
 
 # SysV says 9, but APDG says 32
 PKGNAME_MAX = 32
+
+
+def get_origin_dir():
+    startdir = os.getcwd()
+    os.chdir(os.path.dirname(sys.argv[0]))
+    origin = os.getcwd()
+    os.chdir(startdir)
+    return origin
+
+ORIGIN = get_origin_dir()
 
 
 class RpmFileInfo:
@@ -315,18 +326,21 @@ def main():
 
     rpmfile = os.path.abspath(args[0])
     rpmname = get_rpm_name(rpmfile)
+    sysvname = get_sysv_pkg(rpmname)
     
     if len(args) == 2:
         output = args[1]
     else:
         # Use the rpm name as output
         output = rpmname
+    output = os.path.abspath(output)
 
     if fsformat:
         unpacked_dir = os.path.abspath(output)
     else:
-        # unpacked_dir should be in a temporary directory. FIXME
-        raise NotImplementedError()
+        tempdir = tempfile.mktemp("rpm2sysvpkg")
+        os.mkdir(tempdir)
+        unpacked_dir = os.path.join(tempdir, sysvname)
 
     # Create unpacked output directory, and directories within it. 
     try:
@@ -344,7 +358,6 @@ def main():
     #
     pkginfo = open(os.path.join(unpacked_dir, "pkginfo"), "w")
     # PKG 
-    sysvname = get_sysv_pkg(rpmname)
     pkginfo.write("PKG=%s\n" % sysvname)
     # NAME
     pkginfo.write("NAME=%s\n" % get_sysv_name(rpmfile))
@@ -372,6 +385,21 @@ def main():
         pkgmap.write(sfi.gen_pkgmap_line())
 
     pkgmap.close()
+
+    #
+    # Call pkgtrans, if needed
+    #
+    if not fsformat:
+        # Convert to stream format, by calling pkgtrans
+        newpath = os.getenv("PATH", "") + ":" + ORIGIN
+        os.environ["PATH"] = newpath
+        args = ["pkgtrans", unpacked_dir, output]
+        ret = os.spawnvp(os.P_WAIT, args[0], args)
+        if ret != 0:
+            print >>sys.stderr, "Execution of pkgtrans failed with returncode", ret
+            print >>sys.stderr, "Make sure pkgtrans is in PATH, or the same dir as rpm2sysvpkg."
+        
+    shutil.rmtree(tempdir)
 
 
 if __name__ == "__main__":
