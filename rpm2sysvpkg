@@ -145,10 +145,20 @@ def get_files_info(rpmfile):
         line = stdout.readline().strip()
         if not line:
             break
-        
+
         fields = line.split(" ")
+
+        # path might contain spaces. This can be handled by splitting
+        # the fields backwards. We will still have problems with
+        # owners, groups and symlinks containing spaces, though. I
+        # guess this is a FIXME. 
+        num_pathfields = len(fields)-10
+        pathfields = fields[:num_pathfields]
+        path = " ".join(pathfields)
+        fields = [path,] + fields[num_pathfields:]
+
         if not len(fields) == 11:
-            print >>sys.stderr, "Invalid outpout from rpm --dump:"
+            print >>sys.stderr, "Invalid output from rpm --dump:"
             print >>sys.stderr, repr(line)
             sys.exit(1)
 
