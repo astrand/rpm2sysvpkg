@@ -575,7 +575,10 @@ def main():
     preuninstall_prepend = []
     for rfi in rfis:
         if rfi.isconfig:
+            preuninstall_prepend.append("echo Saving configuration file %s as %s.pkgsave" % (rfi.path, rfi.path))
             preuninstall_prepend.append("mv %s %s.pkgsave" % (rfi.path, rfi.path))
+    if preuninstall_prepend:
+        preuninstall_prepend.append("true")
     
     #
     # Create procedure scripts, if any
