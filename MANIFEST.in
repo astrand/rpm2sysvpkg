@@ -1,0 +1,5 @@
+include MANIFEST.in AUTHORS rpm2sysvpkg.spec LICENSE README TODO Makefile
+
+include rpm2sysvpkg pkgtrans 
+
+global-exclude *~ *.pyo *.pyc .cvsignore #*#
