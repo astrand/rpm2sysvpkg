@@ -60,12 +60,32 @@ class RpmFileInfo:
         path = self.path
         if path.startswith("/"):
             path = path[1:]
-        os.utime(path, (self.mtime, self.mtime))
+        if not os.path.islink(path):
+            # We cannot call utime on broken symlinks
+            os.utime(path, (self.mtime, self.mtime))
 
 
 class SysVFileInfo:
-    def __init__(self, rfi):
+    def __init__(self, rfi=None):
         """Create a SysVFileInfo instance from a RpmFileInfo instance"""
+        if rfi != None:
+            self._init_from_rfi(rfi)
+        else:
+            self.part = 1
+            self.ftype = "f"
+            self.klass = "none"
+            self.pathname = None
+            self.major = None
+            self.minor = None
+            self.mode = None
+            self.owner = None
+            self.group = None
+            self.size = None
+            self.cksum = None
+            self.modtime = None
+            
+
+    def _init_from_rfi(self, rfi):
         # part
         self.part = 1
         # ftype
@@ -337,6 +357,80 @@ def get_sysv_max_part_size(rpmname, num_files):
     return data_blocks + pkgmap_blocks + pkginfo_blocks
 
 
+
+def create_procedure_scripts(rpmfile, unpacked_dir):
+    preinstall = []
+    postinstall = []
+    preuninstall = []
+    postuninstall = []
+    devnull = []
+    current = devnull 
+
+    lang = os.getenv("LANG", "")
+    os.putenv("LANG", "C")
+    stdout, stdin = popen2.popen2(["rpm", "-qp", rpmfile, "--scripts"])
+    os.putenv("LANG", lang)
+    stdin.close()
+    while 1:
+        line = stdout.readline()
+        if not line:
+            break
+
+        if line.endswith("\n"):
+            line = line[:-1]
+
+        if line.startswith("preinstall program:"):
+            preinstall = [line.split(":", 1)[1]]
+            current = devnull
+        elif line.startswith("preinstall scriptlet") and line.endswith(":"):
+            current = preinstall
+
+        elif line.startswith("postinstall program:"):
+            postinstall = [line.split(":", 1)[1]]
+            current = devnull
+        elif line.startswith("postinstall scriptlet") and line.endswith(":"):
+            current = postinstall
+
+        elif line.startswith("preuninstall program:"):
+            preuninstall = [line.split(":", 1)[1]]
+            current = devnull
+        elif line.startswith("preuninstall scriptlet") and line.endswith(":"):
+            current = preuninstall
+
+        elif line.startswith("postuninstall program:"):
+            postuninstall = [line.split(":", 1)[1]]
+            current = devnull
+        elif line.startswith("postuninstall scriptlet") and line.endswith(":"):
+            current = postuninstall
+
+        else:
+            current.append(line)
+
+    preinstall = "\n".join(preinstall)
+    postinstall = "\n".join(postinstall)
+    preuninstall = "\n".join(preuninstall)
+    postuninstall = "\n".join(postuninstall)
+
+    install_dir = os.path.join(unpacked_dir, "install")
+    os.mkdir(install_dir)
+
+    preinstall_file = open(os.path.join(install_dir, "preinstall"), "w")
+    preinstall_file.write(preinstall)
+    preinstall_file.close()
+
+    postinstall_file = open(os.path.join(install_dir, "postinstall"), "w")
+    postinstall_file.write(postinstall)
+    postinstall_file.close()
+
+    preuninstall_file = open(os.path.join(install_dir, "preremove"), "w")
+    preuninstall_file.write(preuninstall)
+    preuninstall_file.close()
+
+    postuninstall_file = open(os.path.join(install_dir, "postremove"), "w")
+    postuninstall_file.write(postuninstall)
+    postuninstall_file.close()
+
+
 def main():
     try:
         opts, args = getopt.getopt(sys.argv[1:], "fhp:",
@@ -434,6 +528,11 @@ def main():
         pkgmap.write(sfi.gen_pkgmap_line())
 
     pkgmap.close()
+
+    #
+    # Create procedure scripts, if any
+    #
+    create_procedure_scripts(rpmfile, unpacked_dir)
 
     #
     # Call pkgtrans, if needed
