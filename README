@@ -1,0 +1,14 @@
+rpm2sysvpkg
+===========
+
+The rpm2sysvpkg project aims to provide Open Source tools for creating
+and handling Solaris and System V packages. It currently contains two
+tools:
+
+* rpm2sysvpkg: A tool which converts RPM packages to System V
+  packages.
+
+* pkgtrans: A tool for translating package formats, from the
+  datastream format to the file system format, or vice versa. This
+  tool aims to work exactly like the Solaris pkgtrans command. 
+
