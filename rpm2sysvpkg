@@ -72,8 +72,8 @@ class SysVFileInfo:
             self._init_from_rfi(rfi)
         else:
             self.part = 1
-            self.ftype = "f"
-            self.klass = "none"
+            self.ftype = None
+            self.klass = None
             self.pathname = None
             self.major = None
             self.minor = None
@@ -83,6 +83,14 @@ class SysVFileInfo:
             self.size = None
             self.cksum = None
             self.modtime = None
+
+
+    def init_from_scriptfile(self, scriptfile):
+        self.ftype = "i"
+        self.pathname = os.path.basename(scriptfile)
+        self.size = os.stat(scriptfile).st_size
+        self.cksum = sysv_sum(scriptfile)
+        self.modtime = os.stat(scriptfile).st_mtime
             
 
     def _init_from_rfi(self, rfi):
@@ -143,11 +151,13 @@ class SysVFileInfo:
     def gen_pkgmap_line(self):
         s = "%d" % self.part
         s += " %s" % self.ftype
-        s += " %s" % self.klass
+        if self.klass != None:
+            s += " %s" % self.klass
         s += " %s" % self.pathname
         if not None in (self.major, self.minor):
             s += " %d %d" % (self.major, self.minor)
-        s += " %o" % self.mode
+        if self.mode != None:
+            s += " %o" % self.mode
         if self.owner and self.group:
             s += " %s %s" % (self.owner, self.group)
         if not None in (self.size, self.cksum):
@@ -364,7 +374,8 @@ def create_procedure_scripts(rpmfile, unpacked_dir):
     preuninstall = []
     postuninstall = []
     devnull = []
-    current = devnull 
+    current = devnull
+    scripts_sfi = []
 
     lang = os.getenv("LANG", "")
     os.putenv("LANG", "C")
@@ -415,24 +426,42 @@ def create_procedure_scripts(rpmfile, unpacked_dir):
     os.mkdir(install_dir)
 
     if preinstall:
-        preinstall_file = open(os.path.join(install_dir, "preinstall"), "w")
+        preinstall_filename = os.path.join(install_dir, "preinstall")
+        preinstall_file = open(preinstall_filename, "w")
         preinstall_file.write(preinstall)
         preinstall_file.close()
+        s = SysVFileInfo()
+        s.init_from_scriptfile(preinstall_filename)
+        scripts_sfi.append(s)
 
     if postinstall:
-        postinstall_file = open(os.path.join(install_dir, "postinstall"), "w")
+        postinstall_filename = os.path.join(install_dir, "postinstall")
+        postinstall_file = open(postinstall_filename, "w")
         postinstall_file.write(postinstall)
         postinstall_file.close()
+        s = SysVFileInfo()
+        s.init_from_scriptfile(postinstall_filename)
+        scripts_sfi.append(s)
 
     if preuninstall:
-        preuninstall_file = open(os.path.join(install_dir, "preremove"), "w")
+        preuninstall_filename = os.path.join(install_dir, "preremove")
+        preuninstall_file = open(preuninstall_filename, "w")
         preuninstall_file.write(preuninstall)
         preuninstall_file.close()
+        s = SysVFileInfo()
+        s.init_from_scriptfile(preuninstall_filename)
+        scripts_sfi.append(s)
 
     if postuninstall:
-        postuninstall_file = open(os.path.join(install_dir, "postremove"), "w")
+        postuninstall_filename = os.path.join(install_dir, "postremove")
+        postuninstall_file = open(postuninstall_filename, "w")
         postuninstall_file.write(postuninstall)
         postuninstall_file.close()
+        s = SysVFileInfo()
+        s.init_from_scriptfile(postuninstall_filename)
+        scripts_sfi.append(s)
+
+    return scripts_sfi
 
 
 def main():
@@ -521,6 +550,11 @@ def main():
     pkginfo.close()
 
     #
+    # Create procedure scripts, if any
+    #
+    scripts_sfi = create_procedure_scripts(rpmfile, unpacked_dir)
+
+    #
     # Create the pkgmap file
     #
     pkgmap = open(os.path.join(unpacked_dir, "pkgmap"), "w")
@@ -530,13 +564,10 @@ def main():
         rfi.set_mtime()
         sfi = SysVFileInfo(rfi)
         pkgmap.write(sfi.gen_pkgmap_line())
+    for sfi in scripts_sfi:
+        pkgmap.write(sfi.gen_pkgmap_line())
 
     pkgmap.close()
-
-    #
-    # Create procedure scripts, if any
-    #
-    create_procedure_scripts(rpmfile, unpacked_dir)
 
     #
     # Call pkgtrans, if needed
