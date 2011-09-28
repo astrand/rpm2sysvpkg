@@ -1,8 +1,7 @@
 #!/usr/bin/env python
-# -*-mode: python; coding: UTF-8 -*-
+# -*-mode: python; coding: utf-8 -*-
 #
-# Copyright (c) 2004-2007 Cendio AB. All rights reserved.
-# Author: Peter Åstrand <astrand@cendio.se>
+# Copyright 2004-2007 Peter Åstrand <astrand@cendio.se> for Cendio AB
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
