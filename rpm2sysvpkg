@@ -528,8 +528,7 @@ def main():
     if fsformat:
         unpacked_dir = output
     else:
-        tempdir = tempfile.mktemp("rpm2sysvpkg")
-        os.mkdir(tempdir)
+        tempdir = tempfile.mkdtemp(suffix="rpm2sysvpkg")
         unpacked_dir = os.path.join(tempdir, sysv_abbrev)
 
     try:
